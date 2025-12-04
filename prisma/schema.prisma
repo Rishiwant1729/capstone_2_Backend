@@ -15,6 +15,7 @@ model User {
   createdAt DateTime  @default(now())
   books     Book[]    @relation("UserBooks")
   summaries Summary[] @relation("UserSummaries")
+  notes     Note[]    @relation("UserNotes")
 }
 
 model Book {
@@ -41,4 +42,16 @@ model Summary {
   createdById Int?
   book        Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
   createdBy   User?    @relation("UserSummaries", fields: [createdById], references: [id])
+  notes       Note[]
+}
+
+model Note {
+  id        Int      @id @default(autoincrement())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  summaryId Int
+  userId    Int
+  summary   Summary  @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  user      User     @relation("UserNotes", fields: [userId], references: [id])
 }
