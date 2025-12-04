@@ -4,6 +4,7 @@ import express from "express";
 import path from "node:path";
 import authRoutes from "./src/routes/authRoutes.js";
 import bookRoutes from "./src/routes/bookRoutes.js";
+import noteRoutes from "./src/routes/noteRoutes.js";
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/books", bookRoutes);
+app.use("/api", noteRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Route not found" });
