@@ -1,14 +1,11 @@
 import prisma from "../prismaClient.js";
 import extractPdfText from "../utils/pdfExtract.js";
-import summarizeText from "../utils/summarizer.js";
+import summarizeText, { generateHighlights } from "../utils/summarizer.js";
 
-export const createBook = async (req, res, next) => {
+export const uploadBook = async (req, res, next) => {
   const { title, author, description } = req.body;
 
-  // Debug logging
-  console.log("req.body:", req.body);
-  console.log("req.file:", req.file);
-  console.log("req.files:", req.files);
+  console.log("📚 Book upload request:", { title, author, hasFile: !!req.file });
 
   if (!title) {
     return res.status(400).json({ error: "Title is required" });
@@ -17,12 +14,14 @@ export const createBook = async (req, res, next) => {
   try {
     const pdfPath = req.file?.path;
 
+    // Create book record first
     const book = await prisma.book.create({
       data: {
         title,
         author,
         description,
         pdfPath,
+        status: pdfPath ? "processing" : "uploaded",
         ownerId: req.user.id,
       },
     });
@@ -30,21 +29,76 @@ export const createBook = async (req, res, next) => {
     let summaryRecord = null;
 
     if (pdfPath) {
-      const rawText = await extractPdfText(pdfPath);
-      const summary = await summarizeText(rawText || description || title);
+      try {
+        // Extract text from PDF (with OCR support)
+        console.log("📄 Extracting text from PDF...");
+        const rawText = await extractPdfText(pdfPath);
+        
+        if (!rawText || rawText.trim().length === 0) {
+          throw new Error("No text could be extracted from the PDF");
+        }
 
-      summaryRecord = await prisma.summary.create({
-        data: {
-          content: summary,
-          highlights: summary?.slice(0, 180),
-          bookId: book.id,
-          createdById: req.user.id,
-        },
-      });
+        console.log("✅ Text extracted successfully:", rawText.length, "characters");
+
+        // Generate AI-powered summary using Gemini
+        console.log("🤖 Generating AI summary...");
+        const summary = await summarizeText(rawText);
+        
+        // Generate highlights
+        const highlights = generateHighlights(summary, 180);
+
+        // Create summary record
+        summaryRecord = await prisma.summary.create({
+          data: {
+            content: summary,
+            highlights: highlights,
+            bookId: book.id,
+            createdById: req.user.id,
+          },
+        });
+
+        // Update book status to completed
+        await prisma.book.update({
+          where: { id: book.id },
+          data: { status: "completed" },
+        });
+
+        console.log("✅ Summary generated and saved successfully");
+      } catch (extractError) {
+        console.error("❌ Error during text extraction or summarization:", extractError);
+        
+        // Update book status to failed
+        await prisma.book.update({
+          where: { id: book.id },
+          data: { status: "failed" },
+        });
+
+        // Create a fallback summary
+        const fallbackSummary = description || `Book: ${title}${author ? ` by ${author}` : ""}`;
+        summaryRecord = await prisma.summary.create({
+          data: {
+            content: `Unable to extract text from PDF. ${fallbackSummary}`,
+            highlights: fallbackSummary.slice(0, 180),
+            bookId: book.id,
+            createdById: req.user.id,
+          },
+        });
+      }
     }
 
-    return res.status(201).json({ book, summary: summaryRecord });
+    // Fetch the updated book with summary
+    const bookWithSummary = await prisma.book.findUnique({
+      where: { id: book.id },
+      include: { summaries: true },
+    });
+
+    return res.status(201).json({ 
+      book: bookWithSummary, 
+      summary: summaryRecord,
+      message: "Book uploaded and processed successfully"
+    });
   } catch (error) {
+    console.error("❌ Error in uploadBook:", error);
     return next(error);
   }
 };
@@ -62,10 +116,10 @@ export const getBooks = async (req, res, next) => {
   }
 };
 
-export const getBookById = async (req, res, next) => {
+export const getBookSummary = async (req, res, next) => {
   try {
     const book = await prisma.book.findFirst({
-      where: { id: Number(req.params.bookId), ownerId: req.user.id },
+      where: { id: Number(req.params.id), ownerId: req.user.id },
       include: { summaries: true },
     });
 
@@ -82,7 +136,7 @@ export const getBookById = async (req, res, next) => {
 export const deleteBook = async (req, res, next) => {
   try {
     const book = await prisma.book.findFirst({
-      where: { id: Number(req.params.bookId), ownerId: req.user.id },
+      where: { id: Number(req.params.id), ownerId: req.user.id },
     });
 
     if (!book) {

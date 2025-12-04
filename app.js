@@ -2,9 +2,8 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import path from "node:path";
-import authRoutes from "./routes/authRoutes.js";
-import bookRoutes from "./routes/bookRoutes.js";
-import summaryRoutes from "./routes/summaryRoutes.js";
+import authRoutes from "./src/routes/authRoutes.js";
+import bookRoutes from "./src/routes/bookRoutes.js";
 
 const app = express();
 
@@ -16,9 +15,8 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.use("/auth", authRoutes);
-app.use("/books", bookRoutes);
-app.use("/summaries", summaryRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/books", bookRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Route not found" });
